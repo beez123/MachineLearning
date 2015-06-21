@@ -1,0 +1,166 @@
+---
+title: "Practical Machine Learning Project"
+author: "Student 11025756"
+date: "June 2015"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache=TRUE)
+knitr::opts_chunk$set(message=FALSE)
+```
+
+```{r, echo=FALSE}
+## Load libraries
+library(caret)
+library(randomForest)
+library(gbm)
+
+```
+##  Overview  
+This document summarizes the result of a machine learning analysis conducted on an data set collected as a part of the [Human Activity Recognition Project](http://groupware.les.inf.puc-rio.br/har).
+
+The first section of this document reviews the preparation of the data set for analysis.  The next section summarizes the analysis performed, followed by the results of the analysis.  The final section explores the predictive qualities.  An appendix is included at the end for supporting information and references.
+
+##  Preparation  
+The data set for this project was downloaded to the local file system.  The [training](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv) and [test sets](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv) were provided as two separate files.
+
+```{r, echo=FALSE}
+
+## Load training data set
+training <- read.csv ("pml-training.csv")
+testing <- read.csv ("pml-testing.csv")
+
+## Set the seed for reproducibility
+set.seed(8879)
+
+```
+Once downloaded, the training set independent variable (classe) was summarized to get an idea of the data.  The same was done for the testing set.
+
+```{r}
+table(training$classe)
+```
+
+__Training Set__  
+* Number of Observations = `r nrow(training)`  
+* Number of Columns = `r ncol(training)`  
+* Number of Observations without Omissions = `r nrow(na.omit(training))`  
+__Testing Set__  
+* Number of Observations = `r nrow(testing)`  
+* Number of Columns = `r ncol(testing)`  
+* Number of Observations without Omissions = `r nrow(na.omit(testing))`  
+
+The next step was to identify and remove the zero variance predictors from the dataset.  Lastly, any rows that were incomplete were removed from the training set.
+
+```{r}
+nsv <- nearZeroVar(training,saveMetrics=TRUE)
+training <- training[,nsv$nzv==FALSE & nsv$zeroVar==FALSE]
+testing <- testing[,nsv$nzv==FALSE & nsv$zeroVar==FALSE]
+
+training <- na.omit (training)
+```
+
+Additional columns were removed that would not be useful for the overall model.  For example, the timestamp and user_name were removed to focus on aspects of the data.
+
+```{r}
+training <- training[,-c(1:7)]
+testing <- testing [,-c(1:7)]
+```
+Finally we create datasets for training and testing from the downloaded training data.
+```{r}
+inTrain <- createDataPartition (y=training$classe, p=0.25, list=FALSE)
+trainingsubset <- training[inTrain,]
+testingsubset <- training[-inTrain,]
+```
+
+##  Analysis  
+Several models were fit to determine the best.  Accuracy was used to select the optimal model using the largest value.  Two models were emphasized for detailed analysis, generalized boost model (GBM) and random forest (RF).  For each tuning options were evaluated to determine the best fit.
+
+Let's explore one each for GBM and RF model and their associated tuning parameters.
+```{r}
+### Generalized Boost Model with tuning applied
+fitControl <- trainControl(method="repeatedcv", number=10, repeats=3)
+
+modelfit1 <- train(classe ~ ., data=trainingsubset, method="gbm", trControl=fitControl,  preProcess=c("center", "scale"), verbose=FALSE)
+confusionMatrix(modelfit1)
+modelfit1$finalModel
+getTrainPerf(modelfit1)
+```
+
+```{r}
+## Random Forest with tuning applied
+modelfitrftest1 <- train(classe ~ ., data = trainingsubset, preProcess=c("center", "scale"), method="rf", trControl=fitControl)
+getTrainPerf(modelfitrftest1)
+
+fitControl2 <- trainControl(method="oob", number=10, repeats=3)
+modelfit2 <- train(classe ~ ., data = trainingsubset, preProcess=c("center", "scale"), method="rf", trControl=fitControl2)
+modelfit2$finalModel
+getTrainPerf(modelfit2)
+
+```
+
+Now we will evaluate both model types without any tuning.
+```{r}
+### Generalized Boost Model w/o tuning
+modelfit1a <- train(classe ~ ., data=trainingsubset, method="gbm", verbose=FALSE)
+confusionMatrix(modelfit1a)
+modelfit1a$finalModel
+getTrainPerf(modelfit1a)
+```
+
+```{r}
+### Random Forest w/o tuning
+modelfit2a <- train(classe ~ ., data = trainingsubset, method="rf")
+confusionMatrix(modelfit2a)
+modelfit2a$finalModel
+getTrainPerf(modelfit2a)
+
+```
+
+
+##  Training Results  
+The Appendix contains the accuracy plots for each of the models prepared in the analysis section. In each case, tuning did improve the accuracy for each model. Based upon the findings of training, the tuned RF model outperforms the tuned GBM model.  Next we'll take a look at the testing sample to see how well each model can predict.
+
+
+## Prediction
+Lastly, we will show the predictive outcomes associated with each model.
+
+```{r, echo=FALSE}
+pred1 <- predict (modelfit1, newdata=testingsubset)
+pred1a <- predict (modelfit1a, newdata=testingsubset)
+pred2 <- predict (modelfit2, newdata=testingsubset)
+pred2a <- predict (modelfit2a, newdata=testingsubset)
+
+### GBM Models
+predProbs1 <- predict (modelfit1, newdata=testingsubset, type="prob")
+predProbs1a <- predict (modelfit1a, newdata=testingsubset, type="prob")
+
+
+### RF Models
+predProbs2 <- predict (modelfit2, newdata=testingsubset, type="prob")
+predProbs2a <- predict (modelfit2a, newdata=testingsubset, type="prob")
+
+```
+When we evaluate the performance of the models, both tuned and not tuned performed effectively the same across measures of sensitivity, specificity, and accuracy.  Overall the tuned RF model did perform the best in all measures.
+
+```{r}
+### GBM Models
+confusionMatrix (data=pred1, testingsubset$class)
+confusionMatrix (data=pred1a, testingsubset$class)
+### RF Models
+confusionMatrix (data=pred2, testingsubset$class)
+confusionMatrix (data=pred2a, testingsubset$class)
+```
+
+
+##  Appendix  
+Additional plots for analysis are included here.
+```{r}
+plot (modelfit1, Main="GBM with Tuning")
+plot (modelfit1a, Main="GBM without Tuning")
+plot (modelfit2, Main="RF with Tuning")
+plot (modelfit2a, Main="RF without Tuning")
+
+```
+
+
+
